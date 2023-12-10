@@ -1,0 +1,722 @@
+---
+title: "Trojan Horse Final Project"
+name: "Tarik Krestalica"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+format: html
+---
+
+```{r, include = FALSE}
+# Clearing the environment
+rm(list = ls())
+```
+
+## Installing the libraries
+```{r, message = FALSE}
+library(tidyverse)
+library(tidymodels)
+library(tidytext)
+library(textrecipes)
+library(kableExtra)
+library(patchwork) # Side by Side Visuals: Add visuals together
+```
+
+
+## Data Loading & Splitting
+```{r, cache = TRUE}
+trojan_data <- read.csv("/Users/tarikkrestalica/FinalProject/FinalProject/Trojan_Detection.csv")
+
+set.seed(434)
+data_split <- initial_split(trojan_data, strata = Class)
+train <- training(data_split)
+test <- testing(data_split)
+```
+
+
+## Statement of Purpose
+
+With the data set we've loaded, our goal is for a given network packet with its records, we want to predict whether or not a network packet is either trojan or benign and find the best predictors and model based on accuracy towards our `Class` variable. This is targeted for businesses, organizations, individuals, large supply chains, and industrial sectors seeking to better protect themselves of these threats, raise awareness of trojan horse, and maintain a safe digital life of trojan horses, and potentially different branches of cyberattacks.
+
+## Executive Summary
+
+
+
+
+
+
+## Introduction
+
+In today's modern-day, digitalized world, there's nothing more vulnerable to businesses, organizations, industrial sectors, and individuals than the threat of a cyberattack. One of the most common cyberattacks are trojan horses, which is software that appears to be legitimate but harmful under the surface. You can think of a trojan horse as a dubious sabotage: say you got an invitation to a birthday party at Sky Zone from a friend of yours, and it's a legit invitation, however, just as you enter, you find out that there's no birthday party after all. You are left puzzled, confused, slightly angry even though you though it was a legitimate event, questioning your friend and wondering where you went wrong. Similarly, whether or not its an application, ad or website, it's hard for the user to understand if it's legitimate and real. Network packets are classified as trojan in a variety of ways, from a malicious hacker either initiating the request or during the packet modification process. Mitigating and preventing trojan horse is crucial to help our autonomous way of life stay afloat, something that can only be answered and better understood by understanding the features of our network packet.
+
+
+## Exploratory Data Analysis
+
+Our data set consists of `r trojan_data %>% nrow()` rows and `r trojan_data %>% ncol()` columns.
+
+**Column Analysis**
+
+We have `r length(select_if(trojan_data, is.numeric))` numeric columns and `r length(select_if(trojan_data, is.character))` categorical columns.
+
+*Missing Values*
+```{r, echo = FALSE,  message = FALSE}
+colSums(is.na(trojan_data))
+```
+
+From the above data set, we can see that there is not a single missing value for any of our available predictors.
+
+*Firstly, before diving into crucial information about our packets, how is our `Class` column distributed across the data set?*
+```{r, echo = FALSE, message = FALSE}
+trojan_data %>%
+  ggplot(aes(Class, fill = Class)) +
+  geom_bar() + 
+  geom_text(
+     stat="count",
+     aes(label = ..count..)) + 
+  labs(title = "Distribution of network packet class column",
+       x = "Class",
+       y = "Count") +
+  theme_classic()
+```
+
+From the plot above, we notice that the distribution of trojan and benign network packets in the data set is well-balanced, and distributed on an almost equal basis. We see than there are more Trojan network packets as opposed to Benign Packets.
+
+
+Now, we seek to explore the relationship with some of the variables towards our `Class` variable of interest. 
+
+*Are there any differences between benign and trojan network packets? To start, first we seek to understand the basic parts from its length, the forward and backward packets, etc. This will be used as a starting point that motivates this discussion.*
+
+**What if we consider the number of forward packets? Do Trojan packets require more forward packets to know the destination?**
+```{r, echo = FALSE, message = FALSE}
+train %>%
+ggplot() +
+  geom_density(aes(log(Total.Fwd.Packets), fill = Class)) +
+  labs(title = "Distribution of Total Number of Forward Packets",
+       x = "Total Forward Packets Log",
+       y = "Count") +
+  facet_wrap(~Class, ncol = 1)
+
+
+```
+
+From this, we can see that `Total.Fwd.Packets` is heavily right-skewed when converting it to a logarithm. When looking at the distribution of Benign and Trojan, they are highly similar, which doesn't tell us much about the relationship between the two variables.
+
+
+
+*What happens if we consider a boxplot?*
+```{r, echo = FALSE, message = FALSE}
+train %>%
+ggplot() +
+  geom_boxplot(aes(x = log(Total.Fwd.Packets), y = Class)) + 
+  labs(title = "Distribution using Boxplots",
+       x = "Total Forward Packets Log",
+       y = "Count") +
+  theme_classic()
+
+```
+
+
+```{r, include = FALSE,  message = FALSE}
+fwd_packets_table_log <- train %>%
+  group_by(Class) %>%
+  summarize(mean_logTotalFwdPackets = mean(log(Total.Fwd.Packets)),
+            median_logTotalFwdPackets = median(log(Total.Fwd.Packets)),
+            twentyFifth_logTotalFwdPackets = quantile(log(Total.Fwd.Packets), 0.25),
+            seventyFifth_logTotalFwdPackets = quantile(log(Total.Fwd.Packets), 0.75))
+
+fwd_packets_table <- train %>%
+  group_by(Class) %>%
+  summarize(mean_TotalFwdPackets = mean(Total.Fwd.Packets),
+            median_TotalFwdPackets = median(Total.Fwd.Packets),
+            twentyFifth_TotalFwdPackets = quantile(Total.Fwd.Packets, 0.25),
+            seventyFifth_TotalFwdPackets = quantile(Total.Fwd.Packets, 0.75))
+```
+
+
+
+Summary statistics in log packets.
+```{r, echo = FALSE}
+train %>%
+  group_by(Class) %>%
+  summarize(mean_logTotalFwdPackets = mean(log(Total.Fwd.Packets)),
+            median_logTotalFwdPackets = median(log(Total.Fwd.Packets)),
+            twentyFifth_logTotalFwdPackets = quantile(log(Total.Fwd.Packets), 0.25),
+            seventyFifth_logTotalFwdPackets = quantile(log(Total.Fwd.Packets), 0.75)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("hover", "striped"))
+
+```
+
+In summary:
+
+* Mean number of log `Total.Fwd.Packets` for Benign network packets: `r fwd_packets_table_log %>% filter(Class == "Benign") %>% select(mean_logTotalFwdPackets)` log packets.
+* Mean number of log `Total.Fwd.Packets` for Trojan network packets: `r fwd_packets_table_log %>% filter(Class == "Trojan") %>% select(mean_logTotalFwdPackets)` log packets.
+
+
+Benign network packets require less log forward packets than Trojan network packets based on mean.
+
+
+*What happens when we convert back to packets from log packets?*
+```{r, echo = FALSE, message = FALSE}
+train %>%
+  group_by(Class) %>%
+  summarize(mean_TotalFwdPackets = mean(Total.Fwd.Packets),
+            median_TotalFwdPackets = median(Total.Fwd.Packets),
+            twentyFifth_TotalFwdPackets = quantile(Total.Fwd.Packets, 0.25),
+            seventyFifth_TotalFwdPackets = quantile(Total.Fwd.Packets, 0.75)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("hover", "striped"))
+```
+
+In summary:
+
+* Mean number of `Total.Fwd.Packets` for Benign network packets: `r fwd_packets_table %>% filter(Class == "Benign") %>% select(mean_TotalFwdPackets)`  packets.
+* Mean number of `Total.Fwd.Packets` for Trojan network packets: `r fwd_packets_table %>% filter(Class == "Trojan") %>% select(mean_TotalFwdPackets)` packets.
+
+
+Benign network packets require more forward packets than Trojan network packets based on mean. This implies that a trojan network packet, it needs less information to go from source to destination.
+
+**Next, what if we consider the number of backward packets? Do Trojan packets require more backward packets to get to the right source?**
+```{r, echo = FALSE, message = FALSE}
+train %>%
+ggplot() +
+  geom_density(aes(log(Total.Backward.Packets), fill = Class)) +
+  labs(title = "Distribution of Total Number of Backward Packets",
+       x = "Total Backward Packets Log",
+       y = "Count") +
+  facet_wrap(~Class, ncol = 1)
+
+```
+
+From this, we can see that `Total.Backward.Packets` is heavily right-skewed when converting it to a logarithm. When looking at the distribution of Benign and Trojan, they are highly similar, comparing to the previous density plot between `Total.Fwd.Packets` and our `Class`.
+
+
+
+*What happens if we consider a boxplot?*
+```{r, echo = FALSE,  message = FALSE}
+train %>%
+ggplot() +
+  geom_boxplot(aes(x = log(Total.Backward.Packets), y = Class)) + 
+  labs(title = "Distribution using Boxplots",
+       x = "Total Backward Packets Log",
+       y = "Count") +
+  theme_classic()
+
+```
+
+From the table above, based on the median, we can see that Trojan network packets require more log backward packets to go from destination to source as opposed to Benign network packets.
+
+```{r, include = FALSE, message = FALSE}
+backward_packets_table <- train %>%
+  group_by(Class) %>%
+  summarize(mean_TotalBackwardPackets = mean(Total.Backward.Packets),
+            median_TotalBackwardPackets = median(Total.Backward.Packets),
+            twentyFifth_TotalBackwardPackets = quantile(Total.Backward.Packets, 0.25),
+            seventyFifth_TotalBackwardPackets = quantile(Total.Backward.Packets, 0.75))
+```
+
+
+
+*What happens when we convert back to packets from log packets?*
+```{r, echo = FALSE, message = FALSE}
+train %>%
+  group_by(Class) %>%
+  summarize(mean_TotalBackwardPackets = mean(Total.Backward.Packets),
+            median_TotalBackwardPackets = median(Total.Backward.Packets),
+            twentyFifth_TotalBackwardPackets = quantile(Total.Backward.Packets, 0.25),
+            seventyFifth_TotalBackwardPackets = quantile(Total.Backward.Packets, 0.75)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("hover", "striped"))
+
+```
+
+In summary:
+
+* Mean number of `Total.Backward.Packets` for Benign network packets: `r backward_packets_table %>% filter(Class == "Benign") %>% select(mean_TotalBackwardPackets)` packets.
+
+* Mean number of `Total.Backward.Packets` for Trojan network packets: `r backward_packets_table %>% filter(Class == "Trojan") %>% select(mean_TotalBackwardPackets)` packets.
+
+Benign network packets require less packets than Trojan network packets based on mean.
+
+
+To summarize, benign network packets on average have more forward and backward packets in order to get from the source to the destination. This could have something to do with the size of the request, and the amount of information you have to work with.
+
+**Now, what happens if we were to consider the length of the packet? What is the relationship between the packet length and Class?**
+```{r, echo = FALSE,  message = FALSE}
+p1 <- train %>%
+ggplot() +
+  geom_boxplot(aes(x = log(Total.Length.of.Bwd.Packets), fill = Class)) + 
+  labs(title = "Distribution of Length of Bwd Packets",
+       x = "Total Backward Packets Log",
+       y = "Count") +
+  theme_classic()
+
+p2 <- train %>%
+ggplot() +
+  geom_boxplot(aes(x = log(Total.Length.of.Fwd.Packets), fill = Class)) + 
+  labs(title = "Distribution of Length of Fwd Packets",
+       x = "Total Forward Packets Log",
+       y = "Count") +
+  theme_classic()
+
+p1 + p2 
+
+```
+
+From the visual, based on the median value, we can see that a Trojan forward packet is larger than a Benign packet, but a Benign packet has larger backward packets than a Trojan packet. 
+
+```{r, include = FALSE}
+length_bwd_table <- train %>%
+  group_by(Class) %>%
+  summarize(mean_LengthofBackwardPacket = mean(Total.Length.of.Bwd.Packets),
+            median_LengthofBackwardPacket = median(Total.Length.of.Bwd.Packets),
+            twentyFifth_LengthofBackwardPacket = quantile(Total.Length.of.Bwd.Packets, 0.25),
+            seventyFifth_LengthofBackwardPacket = quantile(Total.Length.of.Bwd.Packets, 0.75))
+
+length_fwd_table <- train %>%
+  group_by(Class) %>%
+  summarize(mean_LengthofForwardPacket = mean(Total.Length.of.Fwd.Packets),
+            median_LengthofForwardPacket = median(Total.Length.of.Fwd.Packets),
+            twentyFifth_LengthofForwardPacket = quantile(Total.Length.of.Fwd.Packets, 0.25),
+            seventyFifth_LengthofForwardPacket = quantile(Total.Length.of.Fwd.Packets, 0.75))
+
+```
+
+*Summary Statistics for Backward Packet Length*
+```{r, echo = FALSE, message = FALSE}
+train %>%
+  group_by(Class) %>%
+  summarize(mean_LengthofBackwardPacket = mean(Total.Length.of.Bwd.Packets),
+            median_LengthofBackwardPacket = median(Total.Length.of.Bwd.Packets),
+            twentyFifth_LengthofBackwardPacket = quantile(Total.Length.of.Bwd.Packets, 0.25),
+            seventyFifth_LengthofBackwardPacket = quantile(Total.Length.of.Bwd.Packets, 0.75)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("hover", "striped"))
+
+
+```
+
+
+*Summary Statistics for Forward Packet Length*
+```{r, echo = FALSE, message = FALSE}
+train %>%
+  group_by(Class) %>%
+  summarize(mean_LengthofForwardPacket = mean(Total.Length.of.Fwd.Packets),
+            median_LengthofForwardPacket = median(Total.Length.of.Fwd.Packets),
+            twentyFifth_LengthofForwardPacket = quantile(Total.Length.of.Fwd.Packets, 0.25),
+            seventyFifth_LengthofForwardPacket = quantile(Total.Length.of.Fwd.Packets, 0.75)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("hover", "striped"))
+
+```
+
+From the resulting tables, based on the average, we can see that Benign packets require a larger sized forward and backward packet, with an average sized forward packet of `r length_fwd_table %>% filter(Class == "Benign") %>% select(mean_LengthofForwardPacket)` units, and an average size backward packet of `r length_bwd_table %>% filter(Class == "Benign") %>% select(mean_LengthofBackwardPacket)`, compared to Trojan packets, which have an average sized forward packet of `r length_fwd_table %>% filter(Class == "Trojan") %>% select(mean_LengthofForwardPacket)` and an average sized backward packet of `r length_bwd_table %>% filter(Class == "Trojan") %>% select(mean_LengthofBackwardPacket)`
+
+
+Next, because information is spread at ridiculous speeds, it's important that these packets get to their destination as soon as possible. A great metric to analyze is `Fwd.IAT.Total` & `Bwd.IAT.Total`, which is the total time it took for all the packets to travel to their destination divided by the total packets.
+```{r, echo = FALSE, include = FALSE}
+p1 <- train %>%
+ggplot() +
+  geom_boxplot(aes(x = log(Fwd.IAT.Total), fill = Class)) + 
+  labs(title = "Distribution of Forward IAT",
+       x = "Fwd IAT using Log Packets") +
+  theme_classic()
+
+p2 <- train %>%
+ggplot() +
+  geom_boxplot(aes(x = log(Bwd.IAT.Total), fill = Class)) + 
+  labs(title = "Distribution of Backward IAT",
+       x = "Bwd IAT using Log Packets") +
+  theme_classic()
+
+p1 + p2
+
+```
+
+From the visuals, based on the median line, the `Fwd.IAT.Total` for a Benign packet is smaller than the `Fwd.IAT.Total` for a Trojan packet based on log packets, but `Bwd.IAT.Total` for the Benign packets is more than the `Bwd.IAT.Total` for the Trojan packets.
+
+
+What happens if we convert from log packets to packets?
+```{r, include = FALSE, message = FALSE}
+Fwd.IAT_table <- train %>%
+  group_by(Class) %>%
+  summarize(mean_Fwd.IAT.Total = mean(Fwd.IAT.Total),
+            median_Fwd.IAT.Total = median(Fwd.IAT.Total),
+            twentyFifth_Fwd.IAT.Total = quantile(Fwd.IAT.Total, 0.25),
+            seventyFifth_Fwd.IAT.Total = quantile(Fwd.IAT.Total, 0.75))
+
+Bwd.IAT_table <- train %>%
+  group_by(Class) %>%
+  summarize(mean_Bwd.IAT.Total = mean(Bwd.IAT.Total),
+            median_Bwd.IAT.Total = median(Bwd.IAT.Total),
+            twentyFifth_Bwd.IAT.Total = quantile(Bwd.IAT.Total, 0.25),
+            seventyFifth_Bwd.IAT.Total = quantile(Bwd.IAT.Total, 0.75))
+
+```
+
+
+*Summary Statistics for Forward IAT Total*
+```{r, echo = FALSE, message = FALSE}
+train %>%
+  group_by(Class) %>%
+  summarize(mean_Fwd.IAT.Total = mean(Fwd.IAT.Total),
+            median_Fwd.IAT.Total = median(Fwd.IAT.Total),
+            twentyFifth_Fwd.IAT.Total = quantile(Fwd.IAT.Total, 0.25),
+            seventyFifth_Fwd.IAT.Total = quantile(Fwd.IAT.Total, 0.75)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("hover", "striped"))
+
+```
+
+
+For `Fwd.IAT.Total`:
+
+* Benign Packets: `r Fwd.IAT_table %>% filter(Class == "Benign") %>% select(mean_Fwd.IAT.Total)` *units of time*
+* Trojan Packets: `r Fwd.IAT_table %>% filter(Class == "Trojan") %>% select(mean_Fwd.IAT.Total)` *units of time*
+
+We can see that the forward IAT(Inter Arrival Time), the time it takes between a packet that has been received until the arrival of the next packet is lower for Benign packets than Trojan packets. In short, packet forwarding is a faster process for Benign network packets than Trojan packets. 
+
+*Summary Statistics for Backward IAT Total*
+```{r}
+train %>%
+  group_by(Class) %>%
+  summarize(mean_Bwd.IAT.Total = mean(Bwd.IAT.Total),
+            median_Bwd.IAT.Total = median(Bwd.IAT.Total),
+            twentyFifth_Bwd.IAT.Total = quantile(Bwd.IAT.Total, 0.25),
+            seventyFifth_Bwd.IAT.Total = quantile(Bwd.IAT.Total, 0.75)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("hover", "striped"))
+
+```
+
+
+For `Bwd.IAT.Total`:
+
+* Benign Packets: `r Bwd.IAT_table %>% filter(Class == "Benign") %>% select(mean_Bwd.IAT.Total)` *units of time*
+* Trojan Packets: `r Bwd.IAT_table %>% filter(Class == "Trojan") %>% select(mean_Bwd.IAT.Total)` *units of time*
+
+We can see that the backward IAT(Inter Arrival Time), the time it takes between a packet that has been received by the client to the next packet that arrives is lower for a Benign packet as opposed to a Trojan packet. 
+
+To recap and summarize the association between `Bwd.IAT.Total` and `Fwd.IAT.Total` with our `Class`, the `Fwd.IAT.Total` and `Bwd.IAT.Total` is lower for a Benign packet as opposed to a Trojan Packet, potentially as a result to the packet traversal process for a Trojan network packet, and the intents of the hacker who's responsible for the malicious software.
+
+
+Next, we take a look at the `Protocol`, and its association with our `Class` variable. A protocol defines how the network packet, which houses the data of the request, governs and exchanges the data to go from its source to its destination. `Protocol` is encoded in terms of a number, signifying the communication lines.
+
+```{r}
+train <- train %>%
+  mutate(Protocol = as.factor(Protocol))
+
+train %>% 
+  ggplot() +
+  geom_bar(aes(Protocol, fill = Class), position = "dodge") +
+  labs(title = "Distribution of all Protocols by Class",
+       x = "Protocol",
+       y = "Count") +
+  theme_classic()
+
+```
+
+
+```{r}
+protocol_table <- train %>%
+  group_by(Class) %>%
+  count(Protocol) %>%
+  arrange(Protocol) %>%
+  mutate(count = n) %>%
+  select(-n)
+
+protocol_table %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("hover", "striped"))
+
+```
+
+
+From the visual, there are only 3 unique protocols that were used for packet communication for the entire data sending and receiving process. We can see that across each of these protocols, Benign and Trojan packets are on a slightly even playing field, slightly equally represented across both the categories. However, from the visual and table, we can infer the following. 
+
+In summary:
+
+* Using Protocol 0 as the communication and data transmission method, there were more Benign packets as opposed to Trojan packets in this area. 
+  * Benign: `r protocol_table %>% filter(Class == "Benign") %>% filter(Protocol == "0") %>% pull(count)` packets
+  * Trojan: `r protocol_table %>% filter(Class == "Trojan") %>% filter(Protocol == "0") %>% pull(count)` packets
+* Using Protocol 6 as the communication and data transmission method, there were more Trojan packets as opposed to Benign packets in this area. 
+  * Benign: `r protocol_table %>% filter(Class == "Benign") %>% filter(Protocol == "6") %>% pull(count)`packets
+  * Trojan: `r protocol_table %>% filter(Class == "Trojan") %>% filter(Protocol == "6") %>% pull(count)` packets
+* Using Protocol 17 as the communication and data transmission method, there are more Trojan packets as opposed to Benign packets in this area. 
+  * Benign: `r protocol_table %>% filter(Class == "Benign") %>% filter(Protocol == "17") %>% pull(count)` packets
+  * Trojan: `r protocol_table %>% filter(Class == "Trojan") %>% filter(Protocol == "17") %>% pull(count)` packets
+
+
+Now, we seek to understand the relationship between `Fwd.Header.Length` and `Bwd.Header.Length` with our `Class`. If the packet is too long, could that imply a higher likelihood of the packet being a trojan packet?
+
+```{r, echo = FALSE, message = FALSE}
+p1 <- train %>%
+ggplot() +
+  geom_boxplot(aes(x = log(Fwd.Header.Length), fill = Class)) + 
+  labs(title = "Distribution using Boxplots",
+       x = "Forward Header Length in log packets",
+       y = "Count") +
+  theme_classic()
+
+
+p2 <- train %>%
+ggplot() +
+  geom_boxplot(aes(x = log(Bwd.Header.Length), fill = Class)) + 
+  labs(title = "Distribution using Boxplots",
+       x = "Backward Header Length in log packets",
+       y = "Count") +
+  theme_classic()
+
+p1 + p2
+
+```
+
+
+1. Build the Tables
+```{r, include = FALSE}
+fwd_header_length_table <- train %>%
+  group_by(Class) %>%
+  summarize(mean_Fwd.Header.Length = mean(Fwd.Header.Length),
+            median_Fwd.Header.Length = median(Fwd.Header.Length),
+            twentyFifth_Fwd.Header.Length = quantile(Fwd.Header.Length, 0.25),
+            seventyFifth_Fwd.Header.Length = quantile(Fwd.Header.Length, 0.75))
+
+bwd_header_length_table <- train %>%
+  group_by(Class) %>%
+  summarize(mean_Bwd.Header.Length = mean(Bwd.Header.Length),
+            median_Bwd.Header.Length = median(Bwd.Header.Length),
+            twentyFifth_Bwd.Header.Length = quantile(Bwd.Header.Length, 0.25),
+            seventyFifth_Bwd.Header.Length = quantile(Bwd.Header.Length, 0.75))
+```
+
+*Summary statistics for Forward Header Length*
+```{r, echo = FALSE, message = FALSE}
+train %>%
+  group_by(Class) %>%
+  summarize(mean_Fwd.Header.Length = mean(Fwd.Header.Length),
+            median_Fwd.Header.Length = median(Fwd.Header.Length),
+            twentyFifth_Fwd.Header.Length = quantile(Fwd.Header.Length, 0.25),
+            seventyFifth_Fwd.Header.Length = quantile(Fwd.Header.Length, 0.75)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("hover", "striped"))
+
+```
+
+
+*Explanation*
+
+*Summary statistics for Backward Header Length*
+```{r, echo = FALSE, message = FALSE}
+train %>%
+  group_by(Class) %>%
+  summarize(mean_Bwd.Header.Length = mean(Bwd.Header.Length),
+            median_Bwd.Header.Length = median(Bwd.Header.Length),
+            twentyFifth_Bwd.Header.Length = quantile(Bwd.Header.Length, 0.25),
+            seventyFifth_Bwd.Header.Length = quantile(Bwd.Header.Length, 0.75)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("hover", "striped"))
+
+```
+
+
+## Model Construction and Interpretation Section
+
+
+Because we have `r trojan_data %>% ncol()` columns, we seek to reduce the number of variables in the data set utilizing Principal Components Analysis across our modeling workflow.
+```{r}
+# tune_grid <- grid_regular(
+#   num_comp(range(1, 25)),
+#   threshold(range(0, 1)),
+#   levels = 6
+# )
+# 
+# my_rec <- recipe(Class ~ ., data = train) %>%
+#   step_rm(all_nominal_predictors()) %>%
+#   step_zv(all_predictors()) %>%
+#   step_normalize(all_numeric_predictors()) %>%
+#   step_pca(num_comp = tune(), threshold = tune())
+# 
+# 
+# pca_loading <- my_rec %>%
+#   prep()
+
+```
+
+
+```{r, include = FALSE, cache = TRUE}
+set.seed(434)
+train_folds <- vfold_cv(train)
+
+# Reduce data set to reduce the time it takes to build these models
+small_train <- train %>%
+  head(60000)
+
+set.seed(434)
+small_train_folds <- vfold_cv(small_train)
+```
+
+**Logistic Regression**
+```{r, cache = TRUE}
+tune_grid <- tibble(
+  "penalty" = c(1e-5, 1e-3, 1e-1, 1, 10),
+  "mixture" = c(0, 0.25, 0.5, 0.75, 1)
+)
+
+library(glmnet)
+log_reg_spec <- logistic_reg(penalty = tune(), mixture = tune()) %>%
+  set_engine("glmnet") %>%
+  set_mode("classification")
+
+log_reg_rec <- recipe(Class ~ ., data = small_train) %>%
+  step_rm(all_nominal_predictors(), X) %>%
+  step_zv(all_numeric_predictors()) %>%
+  step_impute_median(all_numeric_predictors()) %>%
+  step_normalize(all_numeric_predictors()) %>%
+  step_pca(num_comp = tune(), threshold = tune()) 
+
+rec_grid <- tibble(
+    "num_comp" = c(1, 10, 25, 40, 60),
+    "threshold" = c(0, 0.25, .5, .75, 1)
+)
+
+log_reg_wf <- workflow() %>%
+  add_model(log_reg_spec) %>%
+  add_recipe(log_reg_rec)
+
+comp_grid <- merge(tune_grid, rec_grid)
+
+log_tune_results <- log_reg_wf %>%
+  tune_grid(
+    grid = comp_grid,
+    resamples = small_train_folds
+  )
+
+log_tune_table <- log_tune_results %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  arrange(-mean)
+
+log_tune_results %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  arrange(-mean) %>%
+  head(10) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("hover", "striped")) 
+
+```
+
+
+From the resulting table, the best `penalty` and `mixture` for our logistic regression model involves a `penalty` of `r log_tune_table %>% filter(mean == max(mean)) %>% head(1) %>% pull(penalty)` and a mixture of `r log_tune_table %>% filter(mean == max(mean)) %>% head(1) %>% pull(mixture)`. This means, a `r log_tune_table %>% filter(mean == max(mean)) %>% head(1) %>% pull(penalty)` penalty, implies that when too many terms are used and you pick out an expensive model terms, your budget is reduced by a small number. The mixture of `r log_tune_table %>% filter(mean == max(mean)) %>% head(1) %>% pull(mixture)` implies that our budgetted coefficient budget is used using half squared, half normal budget.
+
+
+However, there's no consistency with our PCA, meaning that whatever our parameters are, our accuracy metric would still be around 
+`r log_tune_table %>% filter(mean == max(mean)) %>% head(1) %>% pull(mean)`. 
+
+
+*Because of the lack of consistency with PCA, we seek to extrapolate the best features utilizing the data set!*
+
+
+We start with a basic logistic regression model to start. What are the optimal hyperparameters?
+```{r, cache = TRUE}
+tune_grid <- tibble(
+  "penalty" = c(1e-5, 1e-3, 1e-1, 1, 10),
+  "mixture" = c(0, 0.25, 0.5, 0.75, 1)
+)
+
+log_reg_spec <- logistic_reg(penalty = tune(), mixture = tune()) %>%
+  set_engine("glmnet") %>%
+  set_mode("classification")
+
+log_reg_rec <- recipe(Class ~ ., data = train) %>%
+  step_rm(Flow.ID, Source.IP, Destination.IP, Timestamp) %>%
+  step_zv(all_predictors()) %>%
+  step_nzv(all_predictors()) %>%
+  step_impute_median(all_numeric_predictors()) %>%
+  step_dummy(all_nominal_predictors())
+  
+prepped <- prep(log_reg_rec) 
+juiced <- juice(prepped)
+
+juiced
+
+
+
+
+```
+
+
+
+**Random Forest**
+```{r}
+# rf_grid <- grid_regular(
+#   mtry(range(1, 50)),
+#   trees(range(1, 250))
+#   tree_depth(range(1, 8)),
+#   levels = 5
+#   
+# )
+# rf_spec <- rand_forest(mtry = tune(), trees = tune(), tree_depth = tune()) %>%
+#   set_engine("ranger") %>%
+#   set_mode("classification")
+# 
+# rf_rec <-
+#   
+# 
+# rf_wf <-
+#   
+# 
+#   
+# rf_results <- 
+
+
+```
+
+
+
+**Gradient Boosting**
+```{r}
+# xgb_grid <- grid_regular(
+#   
+# )
+# xgb_spec <- boosted_tree() %>%
+#   set_engine("xgboost") %>%
+#   set_mode("classification")
+# 
+# xgb_rec <-
+#   
+# 
+# xgb_wf <-
+#   
+# 
+#   
+# xgb_results <- 
+
+
+```
+
+
+
+
+## Model Interpretation
+```{r}
+
+
+```
+
+
+## Conclusion
+```{r}
+
+
+```
+
+
+## References
+
+* Missing values for each column: https://www.projectpro.io/recipes/find-count-of-missing-values-dataframe#:~:text=We%20will%20use%20built%2Din,times%20the%20condition%20was%20True.&text=To%20calculate%20the%20number%20of,We%20use%20colSums()%20function.
+
+* Packet Forwarding: https://www.geeksforgeeks.org/what-is-packet-forwarding/
+
+* Bar graph to show counts: https://www.cedricscherer.com/2021/07/05/a-quick-how-to-on-labelling-bar-graphs-in-ggplot2/
+
+*Tuning my recipe parameters: https://stackoverflow.com/questions/70941388/how-to-prep-a-recipe-including-tunable-arguments
+
