@@ -38,8 +38,7 @@ With the data set we've loaded, our goal is for a given network packet with its 
 
 ## Executive Summary
 
-
-
+The data set that we are working with involves a series of network packets, each populated with crucial information about the packet itself, the method of communication, and a `Class` variable which classifies the network packet as either benign or trojan. Our original goal with this report is to find the best model that predicts whether an incoming network packet is either a benign packet or a trojan packet, and find the most revelant features that contribute to our `Class`, the variable that we want to predict. Due to problems with hyperparameter tuning, and long wait times for code, we only are able to make some predictions with our EDA and the off-the-shelf models. Our `Class` variable is evenly-balanced, with 51% of the network packets being trojan, and 49% of the packets benign. In the EDA, we explore some of the features that are inside the dataset, from `Protocol`, `Total.Fwd.Packets`, `Total.Bwd.Packets`, and  `Total.Length.of.Fwd.Packets` to understand the relationship of these variables when a network packet is trojan or benign. We find that for a benign network packet, it requires more forward and backward packets, the size of the forward and backward packet is larger, and larger header lengths, all of these are conducted and evaluated with the use of histograms, boxplots, and summary statistics tables. In the modeling section, we seek to conduct 3 models: a logistic regression model, random forest, and a gradient boosting model, all of which will be off the shelf. Due to the limitations, we will only be able to find the best model and type of model class used to accurately predict our `Class` variable.
 
 
 
@@ -98,7 +97,6 @@ ggplot() +
 ```
 
 From this, we can see that `Total.Fwd.Packets` is heavily right-skewed when converting it to a logarithm. When looking at the distribution of Benign and Trojan, they are highly similar, which doesn't tell us much about the relationship between the two variables.
-
 
 
 *What happens if we consider a boxplot?*
@@ -312,6 +310,8 @@ From the resulting tables, based on the average, we can see that Benign packets 
 
 
 Next, because information is spread at ridiculous speeds, it's important that these packets get to their destination as soon as possible. A great metric to analyze is `Fwd.IAT.Total` & `Bwd.IAT.Total`, which is the total time it took for all the packets to travel to their destination divided by the total packets.
+
+
 ```{r, echo = FALSE, include = FALSE}
 p1 <- train %>%
 ggplot() +
@@ -519,17 +519,13 @@ train %>%
 
 ## Model Construction and Interpretation Section
 
-
-Because we have `r trojan_data %>% ncol()` columns, we seek to reduce the number of variables in the data set utilizing Principal Components Analysis across our modeling workflow.
-
-
 ```{r, include = FALSE}
 set.seed(434)
 train_folds <- vfold_cv(train)
 
 # Reduce data set to reduce the time it takes to build these models
 small_train <- train %>%
-  head(60000)
+  head(10000)
 
 set.seed(434)
 small_train_folds <- vfold_cv(small_train)
@@ -537,75 +533,8 @@ small_train_folds <- vfold_cv(small_train)
 
 **Logistic Regression**
 ```{r}
-tune_grid <- tibble(
-  "penalty" = c(1e-5, 1e-3, 1e-1, 1, 10),
-  "mixture" = c(0, 0.25, 0.5, 0.75, 1)
-)
-
-library(glmnet)
-log_reg_spec <- logistic_reg(penalty = tune(), mixture = tune()) %>%
-  set_engine("glmnet") %>%
-  set_mode("classification")
-
-log_reg_rec <- recipe(Class ~ ., data = train) %>%
-  step_rm(all_nominal_predictors(), X) %>%
-  step_zv(all_numeric_predictors()) %>%
-  step_impute_median(all_numeric_predictors()) %>%
-  step_normalize(all_numeric_predictors()) %>%
-  step_pca(num_comp = tune(), threshold = tune()) 
-
-rec_grid <- tibble(
-    "num_comp" = c(1, 10, 25, 40, 60),
-    "threshold" = c(0, 0.25, .5, .75, 1)
-)
-
-log_reg_wf <- workflow() %>%
-  add_model(log_reg_spec) %>%
-  add_recipe(log_reg_rec)
-
-comp_grid <- crossing(tune_grid, rec_grid)
-
-log_tune_results <- log_reg_wf %>%
-  tune_grid(
-    grid = comp_grid,
-    resamples = train_folds
-  )
-
-log_tune_table <- log_tune_results %>%
-  collect_metrics() %>%
-  filter(.metric == "accuracy") %>%
-  arrange(-mean)
-
-log_tune_results %>%
-  collect_metrics() %>%
-  filter(.metric == "accuracy") %>%
-  arrange(-mean) %>%
-  head(10) %>%
-  kable() %>%
-  kable_styling(bootstrap_options = c("hover", "striped")) 
-
-```
-
-
-From the resulting table, the best `penalty` and `mixture` for our logistic regression model involves a `penalty` of `r log_tune_table %>% filter(mean == max(mean)) %>% head(1) %>% pull(penalty)` and a mixture of `r log_tune_table %>% filter(mean == max(mean)) %>% head(1) %>% pull(mixture)`. This means, a `r log_tune_table %>% filter(mean == max(mean)) %>% head(1) %>% pull(penalty)` penalty, implies that when too many terms are used and you pick out an expensive model terms, your budget is reduced by a small number. The mixture of `r log_tune_table %>% filter(mean == max(mean)) %>% head(1) %>% pull(mixture)` implies that our budgetted coefficient budget is used using half squared, half normal budget.
-
-
-However, there's no consistency with our PCA, meaning that whatever our parameters are, our accuracy metric would still be around 
-`r log_tune_table %>% filter(mean == max(mean)) %>% head(1) %>% pull(mean)`. 
-
-
-*Because of the lack of consistency with PCA, we seek to extrapolate the best features utilizing the data set!*
-
-
-We start with a basic logistic regression model to start. What are the optimal hyperparameters?
-```{r}
-tune_grid <- tibble(
-  "penalty" = c(1e-5, 1e-3, 1e-1, 1, 10),
-  "mixture" = c(0, 0.25, 0.5, 0.75, 1)
-)
-
-log_reg_spec <- logistic_reg(penalty = tune(), mixture = tune()) %>%
-  set_engine("glmnet") %>%
+log_reg_spec <- logistic_reg() %>%
+  set_engine("glm") %>%
   set_mode("classification")
 
 log_reg_rec <- recipe(Class ~ ., data = train) %>%
@@ -618,79 +547,25 @@ log_reg_rec <- recipe(Class ~ ., data = train) %>%
 prepped <- prep(log_reg_rec) 
 juiced <- juice(prepped)
 
-juiced
-
 log_reg_wf <- workflow() %>%
   add_model(log_reg_spec) %>%
   add_recipe(log_reg_rec)
 
-log_tune_results <- log_reg_wf %>%
-  tune_grid(
-    grid = tune_grid,
-    resamples = train_folds
-  )
+log_cv_results <- log_reg_wf %>%
+  fit_resamples(train_folds)
 
-log_tune_table <- log_tune_results %>%
-  collect_metrics() %>%
-  filter(.metric == "accuracy") %>%
-  arrange(-mean)
-
-log_tune_results %>%
-  collect_metrics() %>%
-  filter(.metric == "accuracy") %>%
-  arrange(-mean) %>%
-  head(10) %>%
-  kable() %>%
-  kable_styling(bootstrap_options = c("hover", "striped")) 
-
-
-```
-
-
-
-**Random Forest**
-```{r}
-rf_grid <- grid_regular(
-  mtry(range(1, 50)),
-  trees(range(1, 1000)),
-  levels = 5
-)
-
-rf_spec <- rand_forest(mtry = tune(), trees = tune()) %>%
-  set_engine("ranger") %>%
-  set_mode("classification")
-
-rf_rec <- recipe(Class ~ ., data = train) %>%
-  step_rm(all_nominal_predictors(), -Protocol, X) %>%
-  step_zv(all_predictors()) %>%
-  step_nzv(all_predictors()) %>%
-  step_impute_median(all_numeric_predictors()) %>%
-  step_dummy(all_nominal_predictors())
-
-prepped <- prep(rf_rec) 
-juiced <- juice(prepped)
-
-juiced
-
-rf_wf <- workflow() %>%
-  add_model(rf_spec) %>%
-  add_recipe(rf_rec) 
-
-rf_tune_results <- rf_wf %>% tune_grid(
-  grid = rf_grid,
-  resamples = train_folds
-)
-
-rf_tune_results %>%
+log_cv_results %>%
   collect_metrics() %>%
   kable() %>%
   kable_styling(bootstrap_options = c("hover", "striped"))
 
 ```
 
-Explain the results of the hyperparameter tuning, find the best possible hyperparameters. If I get to it, consider some healthy visuals for a helpful analysis.
 
-Random Forest on Decided Hyperparameters. For now, it will be impulse due to problems with R lagging.
+From the off-the-shelf model, we can see that our `accuracy` metric is around `r log_cv_results %>% collect_metrics() %>% filter(.metric == "accuracy") %>% pull(mean) * 100` percent, as it does slightly above average towards correctly classifying network packets as either trojan or benign.
+
+
+**Random Forest**
 ```{r}
 rf_spec <- rand_forest() %>%
   set_engine("ranger") %>%
@@ -714,7 +589,7 @@ rf_wf <- workflow() %>%
 
 # Collect cv results, get the results of the practice exams
 rf_cv_results <- rf_wf %>%
-  fit_resamples(train_folds)
+  fit_resamples(train_folds) # 73%
 
 rf_cv_results %>%
   collect_metrics() %>%
@@ -748,7 +623,7 @@ rf_wf <- workflow() %>%
 rf_new_cv_results <- rf_wf %>%
   fit_resamples(train_folds)
 
-rf_new_cv_results %>%
+rf_new_cv_results %>% # 68%
   collect_metrics() %>%
   kable() %>%
   kable_styling(bootstrap_options = c("hover", "striped"))
@@ -760,62 +635,7 @@ With the second off-the shelf random forest model, our `accuracy` metric is arou
 Comparing this model to the first off the shelf model, it does `r rf_cv_results %>% collect_metrics() %>% filter(.metric == "accuracy") %>% pull(mean) * 100 - rf_new_cv_results %>% collect_metrics() %>% filter(.metric == "accuracy") %>% pull(mean) * 100` percentage points worse. 
 
 
-If we look at the two models side by side to each other, what are some of the most important, relevant features. How do they compare and how do they contrast?
-
-```{r}
-final_rf <- finalize_model(
-  rf_spec,
-  best_xgb
-)
-
-library(vip)
-
-rf_p1 <- final_rf %>%
-  set_engine("xgboost", importance = "impurity") %>%
-  fit(priceRange ~ .,
-      data = juice(boost_prep)) %>%
-  vip(geom = "col", num_features = 15) + 
-  labs(title = "Boosting VIP",
-       x = "Importance(%)")
-
-rf_p2 <- final_rf %>%
-  set_engine("xgboost", importance = "impurity") %>%
-  fit(priceRange ~ .,
-      data = juice(boost_prep)) %>%
-  vip(geom = "col", num_features = 15) + 
-  labs(title = "Boosting VIP",
-       x = "Importance(%)")
-
-```
-
-
-
-**Gradient Boosting** : Hyperparameter Tuning
-```{r}
-# xgb_grid <- grid_regular(
-#   
-# )
-# xgb_spec <- boosted_tree() %>%
-#   set_engine("xgboost") %>%
-#   set_mode("classification")
-# 
-# xgb_rec <-
-#   
-# 
-# xgb_wf <-
-#   
-# 
-#   
-# xgb_results <- 
-
-
-```
-
-
-Explain the results of the hyperparameter tuning, find the best possible hyperparameters. If I get to it, consider some healthy visuals for a helpful analysis.
-
-
-**Gradient Boosting** : With the default parameters, not running now due to lag time.
+**Gradient Boosting** : Off the shelf due to lag time
 ```{r}
 xgb_spec <- boost_tree() %>%
   set_engine("xgboost") %>%
@@ -847,15 +667,16 @@ xgb_cv_results %>%
   kable_styling(bootstrap_options = c("hover", "striped"))
 
 
+xgb1_accuracy_mean <- xgb_cv_results %>% collect_metrics() %>% filter(.metric == "accuracy") %>% pull(mean)
 ```
 
-With an off-the shelf random forest model, our `accuracy` metric is around `r xgb_cv_results %>% collect_metrics() %>% filter(.metric == "accuracy") %>% pull(mean)`, meaning that our model is correctly classifying network packets as either trojan or non-trojan `r xgb_cv_results %>% collect_metrics() %>% filter(.metric == "accuracy") %>% pull(mean) * 100` percent of the time.
+With an off-the shelf gradient boosting model, our `accuracy` metric is around `r xgb_cv_results %>% collect_metrics() %>% filter(.metric == "accuracy") %>% pull(mean)`, meaning that our model is correctly classifying network packets as either trojan or non-trojan `r xgb_cv_results %>% collect_metrics() %>% filter(.metric == "accuracy") %>% pull(mean) * 100` percent of the time.
 
 
 
 **Gradient Boosting** : With the EDA variables we've explored.
 ```{r}
-xgb_spec <- boosted_tree() %>%
+xgb_spec <- boost_tree() %>%
   set_engine("xgboost") %>%
   set_mode("classification")
 
@@ -866,7 +687,7 @@ xgb_rec <- recipe(Class ~ Total.Fwd.Packets + Total.Backward.Packets + Total.Len
   step_dummy(all_nominal_predictors())
 
 xgb_prep <- prep(xgb_rec)
-xgb_juice <- juiced(xgb_prep)
+xgb_juice <- juice(xgb_prep)
 
 xgb_juice
 
@@ -883,23 +704,36 @@ xgb_cv_results %>%
   kable() %>%
   kable_styling(bootstrap_options = c("hover", "striped"))
 
+xgb2_accuracy_mean <- xgb_cv_results %>% collect_metrics() %>% filter(.metric == "accuracy") %>% pull(mean)
 
 ```
 
+With a second off-the shelf gradient boosting model with the predictors that we have explored, our `accuracy` metric is around `r xgb_cv_results %>% collect_metrics() %>% filter(.metric == "accuracy") %>% pull(mean)`, meaning that our model is correctly classifying network packets as either trojan or non-trojan `r xgb_cv_results %>% collect_metrics() %>% filter(.metric == "accuracy") %>% pull(mean) * 100` percent of the time, slightly worse than our previous gradient booster with a difference of 3.8%.
 
-
-## Model Interpretation
-```{r}
-
-
-```
 
 
 ## Conclusion
-```{r}
+
+Due to R lagging and the inability to efficiently hyperparameter tune the models with the size of the data set, we make our conclusions based on the off-the-shelf models that we have built, with the cross-validation!.
+
+**What's the best model? How does it compare to the others?**
+Overall, the best model that we have built based on `accuracy` is the Random Forest, with an `accuracy` of around `r rf_cv_results %>% collect_metrics() %>% filter(.metric == "accuracy") %>% pull(mean) * 100` percent. This model involves all the available predictors that we have, minus the `X`, with the feature engineering steps in place. 
+
+The worst model that we have built is the Logistic Regression, with an `accuracy` of around `r log_cv_results %>% collect_metrics() %>% filter(.metric == "accuracy") %>% pull(mean) * 100`, with all the available predictors, minus the term `X`.
+
+For future analysis, future data scientists will want to attempt to reduce down the training set in such a way to allow for faster compute time for optimal hyperparameters for our models. Faster computing times will allow for data scientists to quickly understand and find relationships between the model parameters and maximizing our `accuracy` metric. In addition, because of the limitations I faced with this project, we also want to understand the most relevant features for predicting `Class`, and it's not enough to just rely on our EDA and off the shelf models.
 
 
-```
+In addition, future questions data scientists could answer is as follows:
+
+* What model class will allow us to maximize a different metric, like `recall`, `precision`, and `ROC-AUC`?
+* Conduct a logistic regression model to find the most relevant and statistically significant features from the data set? Across a set of predictors, at what range of values do we see a change in the predicted `Class` of the network packet? Which variables are positively correlated or negatively correlated with our `Class`?
+* Can we extrapolate information from the components of our `Flow.ID` as useful predictors for our `Class` variable? 
+* Are `Source.IP`, `Destination.IP`, `Source.Port`, `Source.IP`, `Destination.IP` useful predictors? Which types of ports and IP addresses are trojan or benign? How could we use this information to conduct a meaningful analysis with our `Class` variable in our EDA and modeling workflow?
+
+
+Despite the limitations I've encountered, this is a great passion project for those who are interested in learning more about network security, trojan horses, and want to dive deeper into a highly complex topic.
+
 
 
 ## References
